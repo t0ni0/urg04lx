@@ -255,12 +255,11 @@ bool scanRange(urg_range_data_byte_t comRange,
 
 int verifyStatus(uint8_t* statusArray){
 	if(statusArray[0] == '0' && statusArray[1] == '0' && statusArray[2] == 'P')
-		return 0;
+		{return 0;}
 	else if(statusArray[0] == '9' && statusArray[1] == '9' && statusArray[2] == 'b')
-		return 1;
-	else if(statusArray[0] == '0' && statusArray[1] != '0'){
-		return 100;
-	}
+		{return 1;}
+	else if(statusArray[0] == '0' && statusArray[1] != '0')
+		{return 100;}
 }
 
 int byteDecode3(uint8_t* bytes)
@@ -390,11 +389,11 @@ int main(int argc, char **argv) {
 	printf("\nscanning\n");
 	const int _nbrScans = 1;
 	const int _nbrCluster = 34;
-	scanRange(URG_COMMUNICATION_3_BYTE, 130, 639, _nbrCluster , 5, _nbrScans, fd);
+	scanRange(URG_COMMUNICATION_3_BYTE, 130, 639, _nbrCluster , 0, _nbrScans, fd);
 	//scanRange(URG_COMMUNICATION_3_BYTE, 384, 384 , 1, 1, 1, fd);
 	fflush(stdout);
 	//read off all bytes until status bytes
-	while(lfCount < 2){
+	while(lfCount < 1){
 		if(read(fd, &buf, 1) > 0){
 			printf("%c ", buf);
 			fflush(stdout);
@@ -408,14 +407,13 @@ int main(int argc, char **argv) {
 	uint8_t status[3];
 	while(bytesRead < 3){
 		if(read(fd, &buf, 1) > 0){
-			bytesRead++;
-			status[bytesRead] = buf;
+			status[bytesRead++] = buf;
 		}
 	}
 	fflush(stdout);
 
-	int err;
-	if(verifyStatus(status) >1){
+	if(verifyStatus(status) > 1){
+		printf("bad status");
 		//not the message 00P status
 		int consecutiveLF = 0;
 		while(consecutiveLF < 2){
@@ -426,14 +424,35 @@ int main(int argc, char **argv) {
 		}
 	} 
 	else {
-		//message is good, pop off bytes until we get to the data
-		lfCount = 0;
-		while(lfCount < 2){
-			if(read(fd, &buf, 1) > 0){
-				if(buf == '\n')
-					lfCount++;
+		if(verifyStatus(status) == 0){
+			//message is good (00P), pop off bytes until we get to the data
+			lfCount = 0;
+			while(lfCount < 5){
+				if(read(fd, &buf, 1) > 0){
+					if(buf == '\n')
+						lfCount++;
+				}
+			}
+		} else if (verifyStatus(status) == 1){
+			//message is good (99b), pop off bytes until we get to the data
+			lfCount = 0;
+			while(lfCount < 1){
+				if(read(fd, &buf, 2) > 0){
+					if(buf == '\n')
+						lfCount++;
+				}
 			}
 		}
+
+		// while(lfCount < 100){
+		// 	if(read(fd, &buf, 1) > 0){
+		// 		printf("%c ", buf);
+		// 		fflush(stdout);
+		// 		if(buf == '\n')
+		// 			lfCount++;
+		// 	}
+		// }
+		// Debugged up to here
 
 		uint8_t point[3];
 		bytesRead = 0;
@@ -445,19 +464,21 @@ int main(int argc, char **argv) {
 						point[bytesRead] = buf;
 						bytesRead++;
 				}
-				
-				if(point[0] != '\n' && point[1] != '\n' && point[2] != '\n'){
-					printf("%d Decoded: %d\n", dataCount++, byteDecode3(point));
-					fflush(stdout);
-				}
-				else{
-					keepGoing = false;
-					printf("End data\n");
-					break;
-				}
+
+			}
+
+			if(point[0] != '\n' && point[1] != '\n' && point[2] != '\n'){
+				printf("%d Decoded: %d\n", dataCount++, byteDecode3(point));
+				fflush(stdout);
+			}
+			else{
+				keepGoing = false;
+				printf("End data\n");
+				break;
 			}
 			bytesRead = 0;
 		}
+			
 	}
 	close_port(fd);
 
