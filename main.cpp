@@ -232,18 +232,18 @@ bool scanRange(urg_range_data_byte_t comRange,
 		int startStep, int endStep, int clusterCount, int scanInterval,
 		int numScans, int _fd){
 	const char scanStartChar = 'M';
-	const int SCAN_CMD_SIZE = 21;
+	const int SCAN_CMD_SIZE = 22;
 	char buffer[SCAN_CMD_SIZE];
 	char scanFormatChar;
-	if(comRange == URG_COMMUNICATION_3_BYTE)
+	//if(comRange == URG_COMMUNICATION_3_BYTE)
 		scanFormatChar = 'D';
-	else
-		scanFormatChar = 'S';
+	//else
+	//	scanFormatChar = 'S';
 
 	//min range = 10, max range = 750
 	//add range padded with 0's
 	int writeSize = snprintf(buffer, SCAN_CMD_SIZE, "%c%c%04d%04d%02d%01d%02d;LOL\n", scanStartChar, 
-		scanFormatChar, startStep, endStep, 99, scanInterval, numScans);
+		scanFormatChar, startStep, endStep, clusterCount, scanInterval, numScans);
 	
 	int writtenSize = write(_fd, buffer, SCAN_CMD_SIZE);
 	printf("Sent: %s", buffer);
@@ -253,15 +253,13 @@ bool scanRange(urg_range_data_byte_t comRange,
 		return true;
 }
 
-bool verifyStatus(uint8_t* statusArray, int* err){
-	*err = 0;
+int verifyStatus(uint8_t* statusArray){
 	if(statusArray[0] == '0' && statusArray[1] == '0' && statusArray[2] == 'P')
-		return false;
+		return 0;
 	else if(statusArray[0] == '9' && statusArray[1] == '9' && statusArray[2] == 'b')
-		return true;
+		return 1;
 	else if(statusArray[0] == '0' && statusArray[1] != '0'){
-		*err = statusArray[1];
-		return false;
+		return 100;
 	}
 }
 
@@ -390,8 +388,11 @@ int main(int argc, char **argv) {
 	char _rbuf[256];
 	ring_initialize(&rbuf, _rbuf, 8);
 	printf("\nscanning\n");
-	scanRange(URG_COMMUNICATION_3_BYTE, 130, 639, 99, 30, 17, fd);
-
+	const int _nbrScans = 1;
+	const int _nbrCluster = 34;
+	scanRange(URG_COMMUNICATION_3_BYTE, 130, 639, _nbrCluster , 5, _nbrScans, fd);
+	//scanRange(URG_COMMUNICATION_3_BYTE, 384, 384 , 1, 1, 1, fd);
+	fflush(stdout);
 	//read off all bytes until status bytes
 	while(lfCount < 2){
 		if(read(fd, &buf, 1) > 0){
@@ -412,9 +413,10 @@ int main(int argc, char **argv) {
 		}
 	}
 	fflush(stdout);
+
 	int err;
-	if(!verifyStatus(status, &err)){
-		//drop all bytes untill two consecutive \n are read
+	if(verifyStatus(status) >1){
+		//not the message 00P status
 		int consecutiveLF = 0;
 		while(consecutiveLF < 2){
 			if(read(fd, &buf, 1) > 0){
@@ -422,7 +424,8 @@ int main(int argc, char **argv) {
 				else consecutiveLF = 0;
 			}
 		}
-	} else {
+	} 
+	else {
 		//message is good, pop off bytes until we get to the data
 		lfCount = 0;
 		while(lfCount < 2){
@@ -431,22 +434,31 @@ int main(int argc, char **argv) {
 					lfCount++;
 			}
 		}
-	}
 
-	uint8_t point[3];
-	bytesRead = 0;
-	while(bytesRead < 3){
-		if(read(fd, &buf, 1) > 0){
-			bytesRead++;
-			point[bytesRead] = buf;
+		uint8_t point[3];
+		bytesRead = 0;
+		bool keepGoing = true;
+		int dataCount = 1;
+		while(keepGoing){
+			while(bytesRead < 3){
+				if(read(fd, &buf, 1) > 0){
+						point[bytesRead] = buf;
+						bytesRead++;
+				}
+				
+				if(point[0] != '\n' && point[1] != '\n' && point[2] != '\n'){
+					printf("%d Decoded: %d\n", dataCount++, byteDecode3(point));
+					fflush(stdout);
+				}
+				else{
+					keepGoing = false;
+					printf("End data\n");
+					break;
+				}
+			}
+			bytesRead = 0;
 		}
 	}
-	if(point[0] != '\n' && point[1] != '\n' && point[2] != '\n')
-		printf("%d\n", byteDecode3(point));
-	else
-		printf("End data\n");
-
-
 	close_port(fd);
 
 	printf("\nProgram terminated\n");
